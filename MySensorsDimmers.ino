@@ -49,16 +49,20 @@
 #define GATE_IMPULSE 5 // delay of triac firing in microseconds
 
 unsigned int dimmer_pins[DIMMERS] = {3, 4, 5, 6, 7, 8, 14, 15};
-unsigned char clock_cn[DIMMERS]; // how many iterations is the triac already on ?
+//unsigned char clock_cn[DIMMERS]; // how many iterations is the triac already on ?
 unsigned int clock_tick; // counting the percentages (0-100) after every cross of zero in the sinus wave of AC.
 unsigned int zero_cross_pin = 2;
 
 #define LIGHT_OFF 0
 #define LIGHT_ON 1
 
+#define DIMMER_OFF 95
+#define DIMMER_FACTOR 1
+
 int16_t last_state[DIMMERS]; // = {LIGHT_OFF, LIGHT_OFF, LIGHT_OFF, LIGHT_OFF, LIGHT_OFF, LIGHT_OFF, LIGHT_OFF, LIGHT_OFF};
 int16_t last_dim[DIMMERS]; // = {0, 0, 0, 0, 0, 0, 0, 0};
-unsigned int dimmer_level[DIMMERS]; // = {95, 95, 95, 95, 95, 95, 95, 95}; // going from 5 (MAX) to 75 (LOW) and 95 (OFF)
+unsigned int dimmer_level[DIMMERS]; // = {950, 950, 950, 950, 950, 950, 950, 950}; // going from 5 (MAX) to 75 (LOW) and 95 (OFF)
+bool first_message_sent = false;
 
 MyMessage light_msg[DIMMERS]; // = { MyMessage( 1, V_STATUS ), MyMessage( 2, V_STATUS ), MyMessage( 3, V_STATUS ), MyMessage( 4, V_STATUS ), MyMessage( 5, V_STATUS ), MyMessage( 6, V_STATUS ), MyMessage( 7, V_STATUS ), MyMessage( 8, V_STATUS ) };
 MyMessage dimmer_msg[DIMMERS]; // = { MyMessage( 1, V_PERCENTAGE ), MyMessage( 2, V_PERCENTAGE ), MyMessage( 3, V_PERCENTAGE ), MyMessage( 4, V_PERCENTAGE ), MyMessage( 5, V_PERCENTAGE ), MyMessage( 6, V_PERCENTAGE ), MyMessage( 7, V_PERCENTAGE ), MyMessage( 8, V_PERCENTAGE ) };
@@ -75,21 +79,28 @@ void timerIsr()
 {
   clock_tick++;
 
-  for (int i = 0; i < DIMMERS; i++) {
-    if (clock_cn[i]) {
-      clock_cn++;
-  
-      if (clock_cn == GATE_IMPULSE) {
-        for (int i = 0; i < DIMMERS; i++) {
-          digitalWrite(dimmer_pins[i], LOW); // triac firing
-        }
-        clock_cn[i] = 0;
+  if (clock_tick = DIMMER_OFF * DIMMER_FACTOR) {
+    for (int i = 0; i < 2; i++) {
+      if (i = 0) {
+        Serial.print(".");
       }
+      //digitalWrite(dimmer_pins[i], LOW); // triac firing
     }
+  }
+  for (int i = 0; i < 2 /*DIMMERS*/; i++) {
+//    if (clock_cn[i] > 0) {
+//      clock_cn[i] = clock_cn[i] + 1;
+//      Serial.print ( "Firing: " );
+//      Serial.println ( dimmer_pins[i] );
+  
+//      if (clock_cn[i] == GATE_IMPULSE) {
+//        digitalWrite(dimmer_pins[i], LOW); // triac firing
+//        clock_cn[i] = 0;
+//      }
+//    }
 
     if (dimmer_level[i] == clock_tick) { // if the current percentage (clock_tick) is the required dimming percentage then fire the dimmer.
-      digitalWrite(dimmer_pins[i], HIGH); // triac firing
-      clock_cn[i] = 1;
+//      digitalWrite(dimmer_pins[i], HIGH); // triac firing
     }
   }
 }
@@ -101,18 +112,19 @@ void setup()
     pinMode(dimmer_pins[i], OUTPUT); // Set AC Load pin as output
     last_state[i] = LIGHT_OFF;
     last_dim[i] = 0;
+    dimmer_level[i] = DIMMER_OFF * DIMMER_FACTOR;
     light_msg[i] = MyMessage(i, V_STATUS);
     dimmer_msg[i] = MyMessage(i, V_PERCENTAGE);
-    clock_cn[i] = 0;
+//    clock_cn[i] = 0;
   }
+//  Serial.begin(115200);
 
   update_light();
   Serial.println( "Node ready to receive messages..." );
 
   attachInterrupt(digitalPinToInterrupt(zero_cross_pin), zero_crosss_int, RISING); // every time the sinus wave of AC passes zero, the clock_tick will start from 0;
-  Timer1.initialize(10); // set a timer of length 100 microseconds for 50Hz. To get to 100 slices of the sinus wave of AC.
+  Timer1.initialize(100); // set a timer of length 100 microseconds for 50Hz. To get to 100 slices of the sinus wave of AC.
   Timer1.attachInterrupt( timerIsr ); // attach the service routine here
-  Serial.begin(115200);
 }
 
 void presentation()
@@ -127,8 +139,8 @@ void presentation()
 
 void loop()
 {
+  Serial.println("loop");
   //In MySensors2.x, first message must come from within loop()
-  static bool first_message_sent = false;
   if ( first_message_sent == false ) {
     Serial.println( "Sending initial state..." );
     for (int sensor = 1; sensor <= DIMMERS; sensor++) {
@@ -137,12 +149,14 @@ void loop()
     }
     first_message_sent = true;
   }
+  wait(5000);
 }
 
 void receive(const MyMessage &message)
 {
   //When receiving a V_STATUS command, switch the light between OFF
   //and the last received dimmer value  
+  Serial.println((String) "sensor: " + message.sensor + ", type: " + message.type + ", value: " + message.getString());
   if ((message.sensor >= DIMMERS_CHILD_ID_OFFSET + 1) and (message.sensor <= DIMMERS_CHILD_ID_OFFSET + DIMMERS)) { // is this a message for a dimmer ?
     if ( message.type == V_STATUS ) {
       Serial.println( "V_STATUS command received..." );
@@ -155,8 +169,12 @@ void receive(const MyMessage &message)
       last_state[message.sensor - DIMMERS_CHILD_ID_OFFSET - 1] = lstate;
   
       //If last dimmer state is 0, set dimmer to 100
+      Serial.print( "Last state = " );
+      Serial.println( lstate);
+      Serial.print( "Last dim = " );
+      Serial.println( last_dim[message.sensor - DIMMERS_CHILD_ID_OFFSET - 1] );
       if (( last_state[message.sensor - DIMMERS_CHILD_ID_OFFSET - 1] == LIGHT_ON ) && ( last_dim[message.sensor - DIMMERS_CHILD_ID_OFFSET - 1] == 0 )) {
-        last_dim[message.sensor]=100;
+        last_dim[message.sensor - DIMMERS_CHILD_ID_OFFSET - 1]=100;
       }
   
       //Update constroller status
@@ -192,44 +210,27 @@ void receive(const MyMessage &message)
 
   //Here you set the actual light state/level
   update_light();
-
-/*  Serial.println((String) "sensor: " + message.sensor + ", type: " + message.type + ", value: " + message.getString());
-  if ((message.sensor >= DIMMERS_CHILD_ID_OFFSET + 1) and (message.sensor <= DIMMERS_CHILD_ID_OFFSET + DIMMERS)) { // is this a message for a dimmer ?
-    if (message.type == V_STATUS) {
-      if (message.getBool() == 1) {
-        dimmer_level[message.sensor - DIMMERS_CHILD_ID_OFFSET - 1] = 100;
-      } else {
-        dimmer_level[message.sensor - DIMMERS_CHILD_ID_OFFSET - 1] = 900;
-      }
-    }
-    if (message.type == V_PERCENTAGE) {
-      int level = message.getUInt();
-      level = 100 - level;
-      if (level < 5) {
-        level = 5;
-      }
-      if (level > 90) {
-        level = 90;
-      }
-      level = level * 10; // timer has been reduced from 100 to 10 microseconds
-      dimmer_level[message.sensor - DIMMERS_CHILD_ID_OFFSET - 1] = level;
-    }
-  }*/
 }
 
 void update_light()
 {
   for (int i = 0; i < DIMMERS; i++) {
-    Serial.print ( "Sensor: " + i );
+    Serial.print ( "Sensor: " );
+    Serial.print ( i );
     Serial.print ( ", " );
     if ( last_state[i] == LIGHT_OFF ) {
-      Serial.println( "Light state: OFF" );
-      dimmer_level[i] = 950;
+      Serial.print( "Light state: OFF, dimmer level: " );
+      dimmer_level[i] = DIMMER_OFF * DIMMER_FACTOR;
     } else {
-      Serial.println( "Light state: ON, Level: " + last_dim[i] );
-      dimmer_level[i] = (75 - (last_dim[i] * 70 / 100) * 10);
+      Serial.print( "Light state: ON, Level: " );
+      Serial.print( last_dim[i] );
+      Serial.print( ", dimmer level: " );
+      dimmer_level[i] = (75 - (last_dim[i] * 70 / 100)) * DIMMER_FACTOR;
     }
+    Serial.print( dimmer_level[i] );
+    Serial.println("");
   }
+  Serial.println("");
 }
 
 void send_dimmer_message(int sensor)
