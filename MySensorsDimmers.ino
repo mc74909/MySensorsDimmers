@@ -46,7 +46,7 @@
 
 #define DIMMERS_CHILD_ID_OFFSET 0 // the dimmers connected via the KRIDA board and are presented as child-sensor-id 1-8
 #define DIMMERS 8
-//#define GATE_IMPULSE 5 // delay of triac firing in microseconds
+#define GATE_IMPULSE 5 // delay of triac firing in microseconds
 
 unsigned int dimmer_pins[DIMMERS] = {3, 4, 5, 6, 7, 8, 14, 15};
 unsigned char clock_cn[DIMMERS]; // how many iterations is the triac already on ?
@@ -77,14 +77,14 @@ void timerIsr()
 
   for (int i = 0; i < DIMMERS; i++) {
     if (clock_cn[i]) {
-//      clock_cn++;
+      clock_cn++;
   
-//      if (clock_cn == GATE_IMPULSE) {
-//        for (int i = 0; i < DIMMERS; i++) {
+      if (clock_cn == GATE_IMPULSE) {
+        for (int i = 0; i < DIMMERS; i++) {
           digitalWrite(dimmer_pins[i], LOW); // triac firing
-//        }
+        }
         clock_cn[i] = 0;
-//      }
+      }
     }
 
     if (dimmer_level[i] == clock_tick) { // if the current percentage (clock_tick) is the required dimming percentage then fire the dimmer.
@@ -110,7 +110,7 @@ void setup()
   Serial.println( "Node ready to receive messages..." );
 
   attachInterrupt(digitalPinToInterrupt(zero_cross_pin), zero_crosss_int, RISING); // every time the sinus wave of AC passes zero, the clock_tick will start from 0;
-  Timer1.initialize(100); // set a timer of length 100 microseconds for 50Hz. To get to 100 slices of the sinus wave of AC.
+  Timer1.initialize(10); // set a timer of length 100 microseconds for 50Hz. To get to 100 slices of the sinus wave of AC.
   Timer1.attachInterrupt( timerIsr ); // attach the service routine here
   Serial.begin(115200);
 }
@@ -224,10 +224,10 @@ void update_light()
     Serial.print ( ", " );
     if ( last_state[i] == LIGHT_OFF ) {
       Serial.println( "Light state: OFF" );
-      dimmer_level[i] = 95;
+      dimmer_level[i] = 950;
     } else {
       Serial.println( "Light state: ON, Level: " + last_dim[i] );
-      dimmer_level[i] = 75 - (last_dim[i] * 70 / 100);
+      dimmer_level[i] = (75 - (last_dim[i] * 70 / 100) * 10);
     }
   }
 }
